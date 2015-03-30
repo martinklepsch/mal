@@ -1,105 +1,55 @@
 import re
-from mal_types import (_symbol, _keyword, _list, _vector, _hash_map)
 
-class Blank(Exception): pass
-
-class Reader():
-    def __init__(self, tokens, position=0):
-        self.tokens = tokens
-        self.position = position
-
+class Reader:
+    "This is Amy and Martin's Lisp Reader"
+    def __init__(self, tokens):
+        self.position = 0
+        self.tokens   = tokens
     def next(self):
-        self.position += 1
-        return self.tokens[self.position-1]
-
+        self.position = self.position + 1
+        return self.tokens[self.position - 1]
     def peek(self):
-        if len(self.tokens) > self.position:
-            return self.tokens[self.position]
-        else:
-            return None
+        return self.tokens[self.position]
 
-def tokenize(str):
-    tre = re.compile(r"""[\s,]*(~@|[\[\]{}()'`~^@]|"(?:[\\].|[^\\"])*"|;.*|[^\s\[\]{}()'"`@,;]+)""");
-    return [t for t in re.findall(tre, str) if t[0] != ';']
+def read_str(s):
+    tokens = tokenizer(s)
+    reader = Reader(tokens)
+    return read_form(reader)
 
-def read_atom(reader):
-    int_re = re.compile(r"-?[0-9]+$")
-    float_re = re.compile(r"-?[0-9][0-9.]*$")
-    token = reader.next()
-    if re.match(int_re, token):     return int(token)
-    elif re.match(float_re, token): return int(token)
-    elif token[0] == '"':           return token[1:-1].replace('\\"', '"')
-    elif token[0] == ':':           return _keyword(token[1:])
-    elif token == "nil":            return None
-    elif token == "true":           return True
-    elif token == "false":          return False
-    else:                           return _symbol(token)
+def tokenizer(s):
+    ptn = re.compile(r"""[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"|;.*|[^\s\[\]{}('"`,;)]*)""")
+    return re.findall(ptn, s)
 
-def read_sequence(reader, typ=list, start='(', end=')'):
-    ast = typ()
-    token = reader.next()
-    if token != start: raise Exception("expected '" + start + "'")
+def read_form(rdr):
+    char = rdr.peek()
+    if char == "(":
+        return read_list(rdr)
+    else:
+        return read_atom(rdr)
 
-    token = reader.peek()
-    while token != end:
-        if not token: raise Exception("expected '" + end + "', got EOF")
-        ast.append(read_form(reader))
-        token = reader.peek()
-    reader.next()
-    return ast
+def read_list(rdr):
+    xs = []
+    while rdr.next() != ")":
+        xs.append(read_form(rdr))
+    return xs
 
-def read_hash_map(reader):
-    lst = read_sequence(reader, list, '{', '}')
-    return _hash_map(*lst)
+class Symbol(str):
+    pass
 
-def read_list(reader):
-    return read_sequence(reader, _list, '(', ')')
+def _symbol_Q(exp):
+    return type(exp) == Symbol
 
-def read_vector(reader):
-    return read_sequence(reader, _vector, '[', ']')
+def read_atom(rdr):
+    int_ptn = re.compile("\d+")
+    float_ptn = re.compile("\d+\.\d+")
+    tkn = rdr.peek()
 
-def read_form(reader):
-    token = reader.peek()
-    # reader macros/transforms
-    if token[0] == ';':
-        reader.next()
-        return None
-    elif token == '\'':
-        reader.next()
-        return _list(_symbol('quote'), read_form(reader))
-    elif token == '`':
-        reader.next()
-        return _list(_symbol('quasiquote'), read_form(reader))
-    elif token == '~':
-        reader.next()
-        return _list(_symbol('unquote'), read_form(reader))
-    elif token == '~@':
-        reader.next()
-        return _list(_symbol('splice-unquote'), read_form(reader))
-    elif token == '^':
-        reader.next()
-        meta = read_form(reader)
-        return _list(_symbol('with-meta'), read_form(reader), meta)
-    elif token == '@':
-        reader.next()
-        return _list(_symbol('deref'), read_form(reader))
+    if re.match(int_ptn, tkn):
+        return int(tkn)
+    elif re.match(float_ptn, tkn):
+        return float(tkn)
+    else:
+        return Symbol(tkn)
 
-    # list
-    elif token == ')': raise Exception("unexpected ')'")
-    elif token == '(': return read_list(reader)
 
-    # vector
-    elif token == ']': raise Exception("unexpected ']'");
-    elif token == '[': return read_vector(reader);
-
-    # hash-map
-    elif token == '}': raise Exception("unexpected '}'");
-    elif token == '{': return read_hash_map(reader);
-
-    # atom
-    else:              return read_atom(reader);
-
-def read_str(str):
-    tokens = tokenize(str)
-    if len(tokens) == 0: raise Blank("Blank Line")
-    return read_form(Reader(tokens))
+r = Reader([1, 2, 3])
